@@ -1,0 +1,40 @@
+# Python & Virtual Env
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+myenv/
+.myenv
+pip-wheel-metadata/
+*.egg-info/
+dist/
+build/
+
+# IDE
+.idea/
+.vscode/
+*.sublime-*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# App specific - NEVER commit your configs!
+sub*.txt
+*.txt
+FAST_*.txt
+VMESS.txt
+VLESS.txt
+SS.txt
+TROJAN.txt
+config*/
+downloads/
+test/
+
+# Executables
+*.exe
+*.spec
