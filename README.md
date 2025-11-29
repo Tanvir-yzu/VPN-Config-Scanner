@@ -35,6 +35,10 @@ Install required packages using:
 pip install -r requirements.txt
 ```
 
+```bash
+streamlit run test.py
+```
+
 ## Usage
 
 1. **Load Configurations**
