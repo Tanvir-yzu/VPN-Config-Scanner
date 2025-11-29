@@ -25,7 +25,6 @@ Thumbs.db
 
 # App specific - NEVER commit your configs!
 sub*.txt
-*.txt
 FAST_*.txt
 VMESS.txt
 VLESS.txt
