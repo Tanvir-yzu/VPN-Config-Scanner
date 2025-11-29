@@ -13,7 +13,7 @@ pip-wheel-metadata/
 *.egg-info/
 dist/
 build/
-
+*requirements.txt
 # IDE
 .idea/
 .vscode/
