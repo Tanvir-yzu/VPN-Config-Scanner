@@ -1,7 +1,7 @@
 # ================================
-# VPN CONFIG SCANNER PRO – STREAMLIT VERSION 2025
-# Web-based, super fast, saves to Downloads folder
-# Run with: streamlit run scanner.py
+# VPN CONFIG SCANNER PRO – STREAMLIT CLOUD VERSION 2025
+# No file writing → gives DOWNLOAD BUTTONS instead
+# Works 100% on streamlit.io
 # ================================
 
 import streamlit as st
@@ -10,93 +10,78 @@ import base64
 import re
 import socket
 import time
-import os
-import threading
 from urllib.parse import urlparse, unquote
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import json
 
-# ── CONFIG ─────────────────────────────────────
 st.set_page_config(page_title="VPN Scanner PRO", page_icon="rocket", layout="centered")
-st.title("VPN Config Scanner PRO 2025")
-st.markdown("### Fastest & Most Beautiful VPN Tester — 100% Working")
-
-# Auto-detect Downloads folder
-downloads_dir = os.path.join(os.path.expanduser("~"), "Downloads")
-if not os.path.exists(downloads_dir):
-    downloads_dir = os.path.expanduser("~/Desktop")
+st.title("VPN Scanner PRO 2025")
+st.markdown("### Fastest Free Online VPN Tester — 100% Working")
 
 # Session state
 if "links" not in st.session_state:
     st.session_state.links = []
+if "results" not in st.session_state:
+    st.session_state.results = {"vmess": [], "vless": [], "ss": [], "trojan": []}
 if "scanning" not in st.session_state:
     st.session_state.scanning = False
 
-# ── SIDEBAR ───────────────────────────────────
+# ── INPUT ─────────────────────────────────────
 with st.sidebar:
-    st.header("Input")
-    option = st.radio("Choose source:", ["Subscription URL", "Paste Base64/Text", "Upload sub*.txt files"])
+    st.header("Input Source")
+    option = st.radio("Choose:", ["Subscription URL", "Paste Base64/Text", "Upload sub*.txt"])
 
+    content = ""
     if option == "Subscription URL":
-        url = st.text_input("Enter subscription URL:", placeholder="https://example.com/sub")
-        if st.button("Load from URL") and url:
+        url = st.text_input("Enter URL:")
+        if st.button("Load URL") and url:
             with st.spinner("Downloading..."):
                 try:
-                    headers = {"User-Agent": "Mozilla/5.0"}
-                    r = requests.get(url, timeout=20, headers=headers, verify=False)
+                    r = requests.get(url, timeout=20, headers={"User-Agent": "Mozilla/5.0"}, verify=False)
                     r.raise_for_status()
                     content = r.text
-                    st.success("Downloaded!")
+                    st.success("Loaded!")
                 except:
-                    st.error("Failed to download URL")
-                    content = ""
+                    st.error("Failed to download")
     elif option == "Paste Base64/Text":
-        content = st.text_area("Paste base64 or raw links here:", height=200)
+        content = st.text_area("Paste here:", height=200)
     else:
-        uploaded_files = st.file_uploader("Upload sub*.txt files", accept_multiple_files=True)
-        content = ""
-        if uploaded_files:
-            for f in uploaded_files:
+        uploaded = st.file_uploader("Upload sub*.txt files", accept_multiple_files=True)
+        if uploaded:
+            for f in uploaded:
                 content += f.read().decode("utf-8", errors="ignore") + "\n"
 
 # ── EXTRACT LINKS ─────────────────────────────
 def extract_links(text):
-    if not text:
-        return []
-    # Try base64 decode first
-    cleaned = text.strip().replace("\n", "")
+    if not text: return []
+    cleaned = text.strip().replace("\n", "").replace("\r", "")
     if not cleaned.startswith(("vmess://", "vless://", "trojan://", "ss://")):
         try:
             decoded = base64.b64decode(cleaned + "===", validate=False).decode("utf-8", errors="ignore")
             if any(x in decoded for x in ("vmess://", "vless://", "trojan://", "ss://")):
                 text = decoded
-        except:
-            pass
-    
+        except: pass
     links = re.findall(r'[a-zA-Z]+://[^\s<>"\']+', text)
     clean = [l.split()[0].strip() for l in links if l.split()[0].startswith(("vmess://", "vless://", "trojan://", "ss://"))]
     return list(dict.fromkeys(clean))
-
-if "content" not in locals():
-    content = ""
 
 if content:
     st.session_state.links = extract_links(content)
     st.success(f"Found {len(st.session_state.links)} unique configs!")
 
-# ── DECODERS ──────────────────────────────────
+# ── DECODERS & PING ───────────────────────────
 def decode_vmess(link):
     try:
         b64 = link[8:] + "=" * (-len(link[8:]) % 4)
-        data = base64.b64decode(b64).decode()
-        import json
-        j = json.loads(data)
-        return j.get("add"), j.get("port"), j.get("ps", "NoName")
+        data = json.loads(base64.b64decode(b64))
+        return data.get("add"), data.get("port"), data.get("ps", "NoName")
     except: return None, None, ""
 
 def decode_vless_trojan(link):
     try:
         u = urlparse(link)
-        return u.hostname, u.port or 443, unquote(u.fragment or "").split("/")[-1]
+        remark = unquote(u.fragment or "").split("/")[-1] if u.fragment else "NoName"
+        return u.hostname, u.port or 443, remark
     except: return None, None, ""
 
 def decode_ss(link):
@@ -112,16 +97,14 @@ def decode_ss(link):
         return host, port, remark
     except: return None, None, ""
 
-def ping(host, port, timeout=4):
+def ping(host, port):
     try:
-        start = time.time()
-        s = socket.create_connection((host, port), timeout=timeout)
+        s = socket.create_connection((host, port), timeout=4)
         s.close()
-        return int((time.time() - start) * 1000)
+        return True
     except:
-        return None
+        return False
 
-# ── SCAN FUNCTION ─────────────────────────────
 def test_link(link):
     try:
         if link.startswith("vmess://"):
@@ -132,67 +115,70 @@ def test_link(link):
             h, p, n = decode_vless_trojan(link); proto = "trojan"
         elif link.startswith("ss://"):
             h, p, n = decode_ss(link); proto = "ss"
-        else:
-            return None
-
+        else: return None
         if not h or not p: return None
-        name = re.sub(r'[<>:"/\\|?*]', '_', (n or "NoName")[:40])
-        lat = ping(h, int(p))
-        if lat and lat <= 800:
-            return {"link": link, "name": name, "latency": lat, "proto": proto}
-    except:
-        pass
+        name = re.sub(r'[<>:"/\\|?*]', '_', n[:40])
+        start = time.time()
+        if ping(h, int(p)):
+            lat = int((time.time() - start) * 1000)
+            if lat <= 800:
+                return {"link": link, "name": name, "lat": lat, "proto": proto}
+    except: pass
     return None
 
-# ── START SCANNING ────────────────────────────
+# ── SCANNING ──────────────────────────────────
 if st.session_state.links and st.button("START SCANNING", type="primary", use_container_width=True):
     if st.session_state.scanning:
         st.warning("Already scanning!")
     else:
         st.session_state.scanning = True
+        st.session_state.results = {"vmess": [], "vless": [], "ss": [], "trojan": []}
         progress = st.progress(0)
         status = st.empty()
-        log = st.empty()
-        results = {"vmess": [], "vless": [], "ss": [], "trojan": []}
+        log_placeholder = st.empty()
 
-        status.info("Scanning configs...")
-
+        status.info("Testing configs...")
         with ThreadPoolExecutor(max_workers=100) as executor:
-            futures = {executor.submit(test_link, link): link for link in st.session_state.links}
-            done = 0
-            for future in as_completed(futures):
-                done += 1
-                progress.progress(done / len(st.session_state.links))
+            futures = [executor.submit(test_link, link) for link in st.session_state.links]
+            for i, future in enumerate(as_completed(futures)):
+                progress.progress((i + 1) / len(futures))
                 result = future.result()
                 if result:
-                    results[result["proto"]].append(f"{result['link']} # {result['name']} - {result['latency']}ms")
-                    log.success(f"{result['latency']}ms → {result['name']}")
-
-        # Save to Downloads
-        saved = 0
-        for proto, items in results.items():
-            if not items: continue
-            items.sort(key=lambda x: int(x.split("-")[-1].split("ms")[0]))
-            fast = [x for x in items if int(x.split("-")[-1].split("ms")[0]) < 200]
-            normal = [x for x in items if x not in fast]
-
-            if fast:
-                path = os.path.join(downloads_dir, f"FAST_{proto.upper()}.txt")
-                open(path, "w", encoding="utf-8").write("\n".join(fast))
-                saved += len(fast)
-            if normal:
-                path = os.path.join(downloads_dir, f"{proto.upper()}.txt")
-                open(path, "w", encoding="utf-8").write("\n".join(normal))
-                saved += len(normal)
+                    line = f"{result['link']} # {result['name']} - {result['lat']}ms"
+                    st.session_state.results[result["proto"]].append(line)
+                    log_placeholder.success(f"{result['lat']}ms → {result['name']}")
 
         st.session_state.scanning = False
-        st.success(f"FINISHED! Saved {saved} configs to Downloads folder!")
+        st.success("SCAN COMPLETE!")
         st.balloons()
 
+# ── SHOW DOWNLOAD BUTTONS ─────────────────────
+if any(st.session_state.results.values()):
+    st.markdown("### Download Results")
+    col1, col2 = st.columns(2)
+    saved = 0
+    for proto, items in st.session_state.results.items():
+        if not items: continue
+        items.sort(key=lambda x: int(x.split("-")[-1].split("ms")[0]))
+        fast = [x for x in items if int(x.split("-")[-1].split("ms")[0]) < 200]
+        normal = [x for x in items if x not in fast]
+        saved += len(fast) + len(normal)
+
+        if fast:
+            txt = "\n".join(fast)
+            if proto == "vmess":
+                col1.download_button(f"FAST_{proto.upper()}.txt ({len(fast)})", txt, f"FAST_{proto.upper()}.txt")
+            else:
+                col2.download_button(f"FAST_{proto.upper()}.txt ({len(fast)})", txt, f"FAST_{proto.upper()}.txt")
+        if normal:
+            txt = "\n".join(normal)
+            col1.download_button(f"{proto.upper()}.txt ({len(normal)})", txt, f"{proto.upper()}.txt")
+
+    st.success(f"Ready! {saved} working configs — click to download")
 else:
     if st.session_state.links:
         st.info(f"Ready to scan {len(st.session_state.links)} configs!")
     else:
-        st.info("Enter a URL, paste text, or upload files to begin")
+        st.info("Enter a subscription URL or paste configs to start")
 
-st.caption(f"Results saved to: {downloads_dir}")
+st.caption("Made with love — Works forever on Streamlit Cloud")
